@@ -18,7 +18,8 @@ class ServerWorker:
 	OK_200 = 0
 	FILE_NOT_FOUND_404 = 1
 	CON_ERR_500 = 2
-	
+	DESCRIBE = 'DESCRIBE' # Adicionar nas constantes
+
 	clientInfo = {}
 	
 	def __init__(self, clientInfo):
@@ -106,7 +107,20 @@ class ServerWorker:
 			
 			# Close the RTP socket
 			self.clientInfo['rtpSocket'].close()
+		elif requestType == self.DESCRIBE:
+			print("processing DESCRIBE\n")
+			# Cria uma resposta SDP simples simulada
+			sdp_body = "v=0\r\no=- " + str(self.clientInfo.get('session', 0)) + " 1 IN IP4 " + str(self.clientInfo['rtspSocket'][1][0]) + "\r\n"
+			sdp_body += "s=RTSP Session\r\nm=video " + str(self.clientInfo.get('rtpPort', 0)) + " RTP/AVP 26\r\n"
 			
+			reply = 'RTSP/1.0 200 OK\r\nCSeq: ' + seq[1] + '\r\n'
+			reply += 'Content-Type: application/sdp\r\n'
+			reply += 'Content-Length: ' + str(len(sdp_body)) + '\r\n\r\n'
+			reply += sdp_body
+			
+			connSocket = self.clientInfo['rtspSocket'][0]
+			connSocket.send(reply.encode('utf-8'))
+		
 	def sendRtp(self):
 		"""Send RTP packets over UDP."""
 		while True:

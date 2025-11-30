@@ -18,7 +18,7 @@ class Client:
     PLAY = 1
     PAUSE = 2
     TEARDOWN = 3
-    
+    DESCRIBE = 4 
     # Initiation..
     def __init__(self, master, serveraddr, serverport, rtpport, filename):
         self.master = master
@@ -147,65 +147,68 @@ class Client:
             tkMessageBox.showwarning('Connection Failed', 'Connection to \'%s\' failed.' %self.serverAddr)
     
     def sendRtspRequest(self, requestCode):
-        """Send RTSP request to the server."""    
+        """Send RTSP request to the server."""
         
         # Setup request
         if requestCode == self.SETUP and self.state == self.INIT:
             threading.Thread(target=self.recvRtspReply).start()
             self.rtspSeq += 1
             
-            request = "SETUP " + self.fileName + " RTSP/1.0\n"
-            request += "CSeq: " + str(self.rtspSeq) + "\n"
-            request += "Transport: RTP/AVP;unicast;client_port=" + str(self.rtpPort)
+            # MELHORIA: Uso de \r\n conforme RFC 2326
+            request = "SETUP " + self.fileName + " RTSP/1.0\r\n"
+            request += "CSeq: " + str(self.rtspSeq) + "\r\n"
+            request += "Transport: RTP/AVP;unicast;client_port=" + str(self.rtpPort) + "\r\n"
             
             self.requestSent = self.SETUP
-        
-        # Play request
+            
         elif requestCode == self.PLAY and self.state == self.READY:
             self.rtspSeq += 1
-            
-            request = "PLAY " + self.fileName + " RTSP/1.0\n"
-            request += "CSeq: " + str(self.rtspSeq) + "\n"
-            request += "Session: " + str(self.sessionId)
-            
+            request = "PLAY " + self.fileName + " RTSP/1.0\r\n"
+            request += "CSeq: " + str(self.rtspSeq) + "\r\n"
+            request += "Session: " + str(self.sessionId) + "\r\n"
             self.requestSent = self.PLAY
-        
-        # Pause request
+            
         elif requestCode == self.PAUSE and self.state == self.PLAYING:
             self.rtspSeq += 1
-            
-            request = "PAUSE " + self.fileName + " RTSP/1.0\n"
-            request += "CSeq: " + str(self.rtspSeq) + "\n"
-            request += "Session: " + str(self.sessionId)
-            
+            request = "PAUSE " + self.fileName + " RTSP/1.0\r\n"
+            request += "CSeq: " + str(self.rtspSeq) + "\r\n"
+            request += "Session: " + str(self.sessionId) + "\r\n"
             self.requestSent = self.PAUSE
             
-        # Teardown request
         elif requestCode == self.TEARDOWN and not self.state == self.INIT:
             self.rtspSeq += 1
-            
-            request = "TEARDOWN " + self.fileName + " RTSP/1.0\n"
-            request += "CSeq: " + str(self.rtspSeq) + "\n"
-            request += "Session: " + str(self.sessionId)
-            
+            request = "TEARDOWN " + self.fileName + " RTSP/1.0\r\n"
+            request += "CSeq: " + str(self.rtspSeq) + "\r\n"
+            request += "Session: " + str(self.sessionId) + "\r\n"
             self.requestSent = self.TEARDOWN
+        elif requestCode == self.DESCRIBE:
+            self.rtspSeq += 1
+            request = "DESCRIBE " + self.fileName + " RTSP/1.0\r\n"
+            request += "CSeq: " + str(self.rtspSeq) + "\r\n"
+            request += "Accept: application/sdp\r\n" # Cabeçalho típico
+            self.requestSent = self.DESCRIBE
         else:
             return
         
-        # CORREÇÃO PYTHON 3: .encode() transforma string em bytes
-        self.rtspSocket.send(request.encode('utf-8'))
         
+        self.rtspSocket.send(request.encode('utf-8'))
         print('\nData sent:\n' + request)
     
     def recvRtspReply(self):
         """Receive RTSP reply from the server."""
         while True:
-            reply = self.rtspSocket.recv(1024)
-            
-            if reply: 
-                # CORREÇÃO PYTHON 3: .decode() transforma bytes em string
+            try:
+                reply = self.rtspSocket.recv(1024)
+                
+                # MELHORIA: Detectar se o servidor fechou a conexão
+                if not reply:
+                    break
+                
                 self.parseRtspReply(reply.decode('utf-8'))
+            except:
+                break # Encerra se houver erro de socket
             
+            # Fecha se foi um Teardown
             if self.requestSent == self.TEARDOWN:
                 try:
                     self.rtspSocket.shutdown(socket.SHUT_RDWR)
@@ -213,20 +216,43 @@ class Client:
                 except:
                     pass
                 break
-    
+
     def parseRtspReply(self, data):
-        """Parse the RTSP reply from the server."""
+        """Parse the RTSP reply from the server robustly."""
         print("Data received:\n" + data)
-        lines = data.split('\n')
-        seqNum = int(lines[1].split(' ')[1])
+        # MELHORIA: splitlines lida com \r\n e \n automaticamente
+        lines = data.splitlines()
+        if not lines: return
+
+        # Parse seguro do código de status
+        try:
+            status_code = int(lines[0].split(' ')[1])
+        except:
+            status_code = 0
+
+        # MELHORIA: Busca dinâmica pelos cabeçalhos em vez de posições fixas
+        seq_num = 0
+        session_id = 0
         
-        if seqNum == self.rtspSeq:
-            session = int(lines[2].split(' ')[1])
+        for line in lines[1:]:
+            parts = line.split(':')
+            if len(parts) >= 2:
+                header_name = parts[0].strip().lower()
+                header_val = parts[1].strip()
+                
+                if header_name == 'cseq':
+                    try: seq_num = int(header_val)
+                    except: pass
+                elif header_name == 'session':
+                    try: session_id = int(header_val)
+                    except: pass
+
+        if seq_num == self.rtspSeq:
             if self.sessionId == 0:
-                self.sessionId = session
+                self.sessionId = session_id
             
-            if self.sessionId == session:
-                if int(lines[0].split(' ')[1]) == 200: 
+            if self.sessionId == session_id:
+                if status_code == 200: 
                     if self.requestSent == self.SETUP:
                         self.state = self.READY
                         self.openRtpPort() 
@@ -237,7 +263,7 @@ class Client:
                         self.playEvent.set()
                     elif self.requestSent == self.TEARDOWN:
                         self.state = self.INIT
-                        self.teardownAcked = 1 
+                        self.teardownAcked = 1
     
     def openRtpPort(self):
         """Open RTP socket binded to a specified port."""
@@ -258,3 +284,6 @@ class Client:
             self.exitClient()
         else: # When the user presses cancel, resume playing.
             self.playMovie()
+
+    def describeMovie(self):
+        self.sendRtspRequest(self.DESCRIBE)
