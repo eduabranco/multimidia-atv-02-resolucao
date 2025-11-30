@@ -27,15 +27,18 @@ class ServerWorker:
 		
 	def run(self):
 		threading.Thread(target=self.recvRtspRequest).start()
-	
+		
 	def recvRtspRequest(self):
-		"""Receive RTSP request from the client."""
-		connSocket = self.clientInfo['rtspSocket'][0]
-		while True:            
-			data = connSocket.recv(256)
-			if data:
-				print("Data received:\n" + data)
-				self.processRtspRequest(data)
+			"""Receive RTSP request from the client."""
+			connSocket = self.clientInfo['rtspSocket'][0]
+			while True:            
+				data = connSocket.recv(256)
+				if data:
+					# CORREÇÃO: Decodifica bytes para string
+					data_str = data.decode('utf-8')
+					
+					print("Data received:\n" + data_str)
+					self.processRtspRequest(data_str)
 	
 	def processRtspRequest(self, data):
 		"""Process RTSP request sent from the client."""
@@ -69,7 +72,16 @@ class ServerWorker:
 				self.replyRtsp(self.OK_200, seq[1])
 				
 				# Get the RTP/UDP port from the last line
-				self.clientInfo['rtpPort'] = request[2].split(' ')[3]
+				# CORREÇÃO: O código original falha se não houver espaços. 
+				# Esta versão busca "client_port=" independentemente da formatação.
+				try:
+					transport_line = request[2]
+					# Pega o que está depois de "client_port="
+					port_part = transport_line.split("client_port=")[1]
+					# Garante que pegamos apenas o número (remove ponto e vírgula se houver, e espaços/quebras de linha)
+					self.clientInfo['rtpPort'] = port_part.split(';')[0].strip()
+				except:
+					print("Erro ao fazer parsing da porta RTP")
 		
 		# Process PLAY request 		
 		elif requestType == self.PLAY:
@@ -159,17 +171,20 @@ class ServerWorker:
 		rtpPacket.encode(version, padding, extension, cc, seqnum, marker, pt, ssrc, payload)
 		
 		return rtpPacket.getPacket()
-		
+			
 	def replyRtsp(self, code, seq):
-		"""Send RTSP reply to the client."""
-		if code == self.OK_200:
-			#print "200 OK"
-			reply = 'RTSP/1.0 200 OK\nCSeq: ' + seq + '\nSession: ' + str(self.clientInfo['session'])
-			connSocket = self.clientInfo['rtspSocket'][0]
-			connSocket.send(reply)
-		
-		# Error messages
-		elif code == self.FILE_NOT_FOUND_404:
-			print("404 NOT FOUND")
-		elif code == self.CON_ERR_500:
-			print("500 CONNECTION ERROR")
+			"""Send RTSP reply to the client."""
+			if code == self.OK_200:
+				#print "200 OK"
+				# Monta a resposta como string
+				reply = 'RTSP/1.0 200 OK\nCSeq: ' + seq + '\nSession: ' + str(self.clientInfo['session'])
+				connSocket = self.clientInfo['rtspSocket'][0]
+				
+				# CORREÇÃO: Codifica a string para bytes antes de enviar
+				connSocket.send(reply.encode('utf-8'))
+			
+			# Error messages
+			elif code == self.FILE_NOT_FOUND_404:
+				print("404 NOT FOUND")
+			elif code == self.CON_ERR_500:
+				print("500 CONNECTION ERROR")
