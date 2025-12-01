@@ -1,5 +1,5 @@
-import sys
 from time import time
+
 HEADER_SIZE = 12
 
 class RtpPacket:    
@@ -13,7 +13,7 @@ class RtpPacket:
         timestamp = int(time())
         header = bytearray(HEADER_SIZE)
         
-        # MELHORIA: Uso de máscaras (&) para garantir que valores grandes não corrompam outros campos
+        # Improvement: Use bitmasks (&) to ensure large values don't corrupt other fields
         
         # Byte 0: Version (2 bits) | Padding (1 bit) | Extension (1 bit) | CC (4 bits)
         header[0] = ((version & 0x03) << 6) | ((padding & 0x01) << 5) | ((extension & 0x01) << 4) | (cc & 0x0F)
@@ -21,17 +21,17 @@ class RtpPacket:
         # Byte 1: Marker (1 bit) | Payload Type (7 bits)
         header[1] = ((marker & 0x01) << 7) | (pt & 0x7F)
         
-        # Byte 2 e 3: Sequence Number (16 bits)
+        # Bytes 2 and 3: Sequence Number (16 bits)
         header[2] = (seqnum >> 8) & 0xFF
         header[3] = seqnum & 0xFF
         
-        # Byte 4 a 7: Timestamp (32 bits)
+        # Bytes 4 to 7: Timestamp (32 bits)
         header[4] = (timestamp >> 24) & 0xFF
         header[5] = (timestamp >> 16) & 0xFF
         header[6] = (timestamp >> 8) & 0xFF
         header[7] = timestamp & 0xFF
         
-        # Byte 8 a 11: SSRC (32 bits)
+        # Bytes 8 to 11: SSRC (32 bits)
         header[8] = (ssrc >> 24) & 0xFF
         header[9] = (ssrc >> 16) & 0xFF
         header[10] = (ssrc >> 8) & 0xFF
