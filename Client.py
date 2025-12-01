@@ -43,31 +43,43 @@ class Client:
         
     def createWidgets(self):
         """Build GUI."""
+        # Create Setup button with color
         self.setup = Button(self.master, width=20, padx=3, pady=3, bg="#A7C7E7")
         self.setup["text"] = "Setup"
         self.setup["command"] = self.setupMovie
         self.setup.grid(row=1, column=0, padx=2, pady=2)
 
+        # Create Play button with color
         self.start = Button(self.master, width=20, padx=3, pady=3, bg="#BCEBCB")
         self.start["text"] = "Play"
         self.start["command"] = self.playMovie
         self.start.grid(row=1, column=1, padx=2, pady=2)
 
+        # Create Pause button with color
         self.pause = Button(self.master, width=20, padx=3, pady=3, bg="#F7C5CC")
         self.pause["text"] = "Pause"
         self.pause["command"] = self.pauseMovie
         self.pause.grid(row=1, column=2, padx=2, pady=2)
 
+        # Create Teardown button with color
         self.teardown = Button(self.master, width=20, padx=3, pady=3, bg="#FFD8B1")
         self.teardown["text"] = "Teardown"
         self.teardown["command"] = self.exitClient
         self.teardown.grid(row=1, column=3, padx=2, pady=2)
+
+        # Create Describe button
+        self.describe = Button(self.master, width=20, padx=3, pady=3)
+        self.describe["text"] = "Describe"
+        self.describe["command"] = self.sendDescribe
+        self.describe.grid(row=2, column=0, columnspan=4, padx=2, pady=2)
         
+        # Create label to display the movie
         self.label = Label(self.master, height=19)
         self.label.grid(row=0, column=0, columnspan=4, sticky=W+E+N+S, padx=5, pady=5) 
         
+        # Create status label
         self.statusLabel = Label(self.master, text="State: INIT - Waiting for Setup", bd=1, relief=SUNKEN, anchor=W)
-        self.statusLabel.grid(row=2, column=0, columnspan=4, sticky=W+E)
+        self.statusLabel.grid(row=3, column=0, columnspan=4, sticky=W+E)
         
         self.updateButtonStates()
 
@@ -120,6 +132,10 @@ class Client:
             self.playEvent = threading.Event()
             self.playEvent.clear()
             self.sendRtspRequest(self.PLAY)
+
+    def sendDescribe(self):
+        """Handler para o botão Describe."""
+        self.sendRtspRequest(self.DESCRIBE)
     
     def listenRtp(self):        
         """Listen for RTP packets."""
@@ -188,15 +204,20 @@ class Client:
             tkMessageBox.showwarning('Connection Failed', 'Connection to \'%s\' failed.' %self.serverAddr)
     
     def sendRtspRequest(self, requestCode):
-        """Send RTSP request to the server."""
+        """Send RTSP request to the server."""    
+        
+        # Setup request
         if requestCode == self.SETUP and self.state == self.INIT:
             threading.Thread(target=self.recvRtspReply).start()
             self.rtspSeq += 1
+            
+            # Use \r\n for RTSP compliance
             request = "SETUP " + self.fileName + " RTSP/1.0\r\n"
             request += "CSeq: " + str(self.rtspSeq) + "\r\n"
             request += "Transport: RTP/AVP;unicast;client_port=" + str(self.rtpPort) + "\r\n"
             self.requestSent = self.SETUP
             
+        # Play request
         elif requestCode == self.PLAY and self.state == self.READY:
             self.rtspSeq += 1
             request = "PLAY " + self.fileName + " RTSP/1.0\r\n"
@@ -210,19 +231,22 @@ class Client:
             request += "CSeq: " + str(self.rtspSeq) + "\r\n"
             request += "Session: " + str(self.sessionId) + "\r\n"
             self.requestSent = self.PAUSE
-            
+        # Teardown request
         elif requestCode == self.TEARDOWN and not self.state == self.INIT:
             self.rtspSeq += 1
             request = "TEARDOWN " + self.fileName + " RTSP/1.0\r\n"
             request += "CSeq: " + str(self.rtspSeq) + "\r\n"
             request += "Session: " + str(self.sessionId) + "\r\n"
             self.requestSent = self.TEARDOWN
-
+            
+        # Describe request
         elif requestCode == self.DESCRIBE:
             self.rtspSeq += 1
             request = "DESCRIBE " + self.fileName + " RTSP/1.0\r\n"
             request += "CSeq: " + str(self.rtspSeq) + "\r\n"
             request += "Accept: application/sdp\r\n" 
+            if self.sessionId != 0:
+                request += "Session: " + str(self.sessionId) + "\r\n"
             self.requestSent = self.DESCRIBE
         else:
             return
@@ -236,8 +260,11 @@ class Client:
             try:
                 reply = self.rtspSocket.recv(1024)
                 
-                if reply:
-                    self.parseRtspReply(reply.decode('utf-8'))
+                # If connection closes
+                if not reply:
+                    break
+                    
+                self.parseRtspReply(reply.decode('utf-8'))
                 
                 if self.requestSent == self.TEARDOWN:
                     self.rtspSocket.shutdown(socket.SHUT_RDWR)
@@ -249,37 +276,30 @@ class Client:
     def parseRtspReply(self, data):
         """Parse the RTSP reply from the server."""
         print("Data received:\n" + data)
-        lines = data.splitlines()
+
+        lines = data.splitlines()  # More robust than split('\n')
         if not lines: return
 
         try:
-            status_code = int(lines[0].split(' ')[1])
+            seqNum = int(lines[1].split(' ')[1])
         except:
-            status_code = 0
-
-        seq_num = 0
-        session_id = 0
-        
-        # Dynamic search for headers
-        for line in lines[1:]:
-            parts = line.split(':')
-            if len(parts) >= 2:
-                header_name = parts[0].strip().lower()
-                header_val = parts[1].strip()
-                
-                if header_name == 'cseq':
-                    try: seq_num = int(header_val)
-                    except: pass
-                elif header_name == 'session':
-                    try: session_id = int(header_val)
-                    except: pass
-
-        if seq_num == self.rtspSeq:
-            if self.sessionId == 0:
-                self.sessionId = session_id
+            seqNum = self.rtspSeq  # Fallback
             
-            if self.sessionId == session_id:
-                if status_code == 200: 
+        # Try to get SessionID in a more robust way
+        session = self.sessionId
+        for line in lines:
+            if line.lower().startswith("session:"):
+                try:
+                    session = int(line.split(':')[1].strip())
+                except:
+                    pass
+        
+        if seqNum == self.rtspSeq:
+            if self.sessionId == 0:
+                self.sessionId = session
+            
+            if self.sessionId == session:
+                if int(lines[0].split(' ')[1]) == 200: 
                     if self.requestSent == self.SETUP:
                         self.state = self.READY
                         self.openRtpPort() 
@@ -291,6 +311,19 @@ class Client:
                     elif self.requestSent == self.TEARDOWN:
                         self.state = self.INIT
                         self.teardownAcked = 1
+                    # Display SDP when receiving DESCRIBE response
+                    elif self.requestSent == self.DESCRIBE:
+                        # SDP body usually comes after a blank line
+                        parts = data.split('\r\n\r\n')
+                        if len(parts) > 1:
+                            sdp_body = parts[1]
+                            tkMessageBox.showinfo("Session Description (SDP)", sdp_body)
+                        else:
+                            # In case the server used only \n
+                            parts = data.split('\n\n')
+                            if len(parts) > 1:
+                                sdp_body = parts[1]
+                                tkMessageBox.showinfo("Session Description (SDP)", sdp_body)
                     
                     # Schedule button update on main thread
                     self.master.after(0, self.updateButtonStates)
@@ -312,6 +345,6 @@ class Client:
         self.pauseMovie()
         if tkMessageBox.askokcancel("Quit?", "Are you sure you want to quit?"):
             self.exitClient()
-        else: 
+        else:  # When the user presses cancel, resume playing if it was playing
             if self.state == self.PLAYING:
                 self.playMovie()
