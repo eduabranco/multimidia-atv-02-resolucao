@@ -94,7 +94,7 @@ class Client:
             self.statusLabel.configure(text="Estado: READY (Pronto)")
         elif self.state == self.PLAYING:
             self.setup['state'] = 'disabled'
-            self.describe['state'] = 'disabled'
+            self.describe['state'] = 'normal'
             self.start['state'] = 'disabled'
             self.pause['state'] = 'normal'
             self.teardown['state'] = 'normal'
@@ -161,9 +161,8 @@ class Client:
                         
                         loss = (self.packetsLost/self.totalPackets)*100 if self.totalPackets > 0 else 0
                         # atualiza título com taxa de perda (thread-safe)
-                        self.master.after(0, lambda: self.master.title(f"RTP Video Player | Perda: {loss:.1f}%"))
+                        self.master.after(0, lambda: self.master.title(f"StreamingService | Seq: {currSeq} |  Perda: {loss:.1f}%"))
                         
-                    # limpa buffer se crescer demais
                     if len(self.buffer) > 500000: 
                         print("Limpando buffer sujo.")
                         self.buffer = b""
@@ -191,7 +190,7 @@ class Client:
         """Atualiza `Label` com a imagem do arquivo dado."""
         try:
             photo = ImageTk.PhotoImage(Image.open(imageFile))
-            self.label.configure(image = photo, height=720) 
+            self.label.configure(image = photo, width=640,height=480) 
             self.label.image = photo
         except: pass
         
@@ -299,7 +298,7 @@ class Client:
                         self.state = self.INIT
                         self.teardownAcked = 1
                 elif req == self.DESCRIBE:
-                    # Exibe SDP (DESCRIBE não requer Session)
+                    # Exibe SDP (DESCRIBE)
                     parts = data.split('\r\n\r\n')
                     if len(parts) > 1:
                         sdp_body = parts[1]

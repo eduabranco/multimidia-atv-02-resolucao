@@ -20,7 +20,6 @@ class Server:
         while True:
             clientInfo = {}
             clientInfo['rtspSocket'] = rtspSocket.accept()
-            # inicia worker para o cliente
             ServerWorker(clientInfo).run()
 
 if __name__ == "__main__":

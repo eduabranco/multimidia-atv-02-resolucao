@@ -5,25 +5,24 @@ from VideoStream import VideoStream
 from RtpPacket import RtpPacket
 
 class ServerWorker:
-    # Tipos de requisição RTSP
+
     SETUP = 'SETUP'
     PLAY = 'PLAY'
     PAUSE = 'PAUSE'
     TEARDOWN = 'TEARDOWN'
     DESCRIBE = 'DESCRIBE'
     
-    # Estados da Máquina de Estados (FSM)
+    # (FSM)
     INIT = 0
     READY = 1
     PLAYING = 2
     state = INIT
 
-    # Códigos de resposta
     OK_200 = 0
     FILE_NOT_FOUND_404 = 1
     CON_ERR_500 = 2
     
-    # Tamanho máximo da carga útil RTP (MTU Ethernet seguro ~1400 bytes)
+    # MTU Ethernet seguro ~1400 bytes
     MAX_RTP_PAYLOAD = 1400 
 
     clientInfo = {}
@@ -66,8 +65,6 @@ class ServerWorker:
             if "CSeq" in line:
                 try: seq = line.split("CSeq:")[1].strip()
                 except: pass
-        
-        # --- MÁQUINA DE ESTADOS ---
 
         # SETUP
         if requestType == self.SETUP:
@@ -120,10 +117,10 @@ class ServerWorker:
             except: pass
             self.state = self.INIT
 
-        # DESCRIBE (pode ser chamado em qualquer estado)
+        # DESCRIBE
         elif requestType == self.DESCRIBE:
             print("Processando DESCRIBE...")
-            # monta corpo SDP simulado
+            # monta corpo SDP
             sdp_body = "v=0\r\n"
             sdp_body += "o=- " + str(self.clientInfo.get('session', 123456)) + " 1 IN IP4 " + str(self.clientInfo['rtspSocket'][1][0]) + "\r\n"
             sdp_body += "s=Mjpeg Stream Python\r\n"
@@ -131,7 +128,7 @@ class ServerWorker:
             sdp_body += "m=video " + str(self.clientInfo.get('rtpPort', 0)) + " RTP/AVP 26\r\n"
             sdp_body += "a=control:streamid=0\r\n"
             
-            # Cabeçalho da resposta
+            # Header RTSP (SDP)
             reply = 'RTSP/1.0 200 OK\r\nCSeq: ' + str(seq) + '\r\n'
             reply += 'Content-Type: application/sdp\r\n'
             reply += 'Content-Base: ' + filename + '\r\n'
@@ -143,12 +140,11 @@ class ServerWorker:
     def sendRtp(self):
         """Envia frames RTP com fragmentação para suportar UDP."""
         while True:
-            self.clientInfo['event'].wait(0.05) # Controle simples de taxa (aprox 20 FPS)
-            
+            self.clientInfo['event'].wait(0.033)  # ~30 FPS
             if self.clientInfo['event'].isSet(): 
                 break 
             
-            # Obtém o quadro inteiro (pode ser grande)
+            # Obtém o quadro inteiro
             frame_data = self.clientInfo['videoStream'].nextFrame()
             
             if frame_data: 
@@ -160,7 +156,7 @@ class ServerWorker:
                 total_len = len(frame_data)
                 offset = 0
                 
-                # Loop para quebrar o quadro em pedaços (Chunks)
+                # Loop de Quebra (Chunks)
                 while offset < total_len:
                     end = min(offset + self.MAX_RTP_PAYLOAD, total_len)
                     chunk = frame_data[offset : end]

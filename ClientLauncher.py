@@ -15,7 +15,6 @@ if __name__ == "__main__":
     
     root = Tk()
 
-    # instancia o cliente
     app = Client(root, serverAddr, serverPort, rtpPort, fileName)
-    app.master.title("RTP Client")    
+    app.master.title("StreamingService")    
     root.mainloop()
