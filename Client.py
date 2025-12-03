@@ -191,7 +191,7 @@ class Client:
         """Atualiza `Label` com a imagem do arquivo dado."""
         try:
             photo = ImageTk.PhotoImage(Image.open(imageFile))
-            self.label.configure(image = photo, height=288) 
+            self.label.configure(image = photo, height=720) 
             self.label.image = photo
         except: pass
         
